@@ -5,6 +5,3 @@ variation in metabolic phenotypes in the Drosophila Genetic Reference Panel" pub
 [Science Advances ](https://advances.sciencemag.org/content/7/5/eabc3781). 
 
 The data are freely avaible at [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE126018).
-
-__Coming soon!__
-
