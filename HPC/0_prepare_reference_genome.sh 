@@ -1,0 +1,102 @@
+#!/bin/bash
+
+#BSUB -L /bin/bash
+#BSUB -e 0_prepare_reference_genome.err
+#BSUB -o 0_prepare_reference_genome.out
+#BSUB -J step0_refGen
+#BSUB -M 32000000
+#BSUB -R rusage[mem=32000]
+#BSUB -n 12
+#BSUB -u maria.litovchenko@epfl.ch
+
+# WARNING!
+# This script scpecifications above are for SLURM systems. The job handling
+# system might be different on your HPC.
+
+export PATH=/software/bin:$PATH;
+module use /software/module/;
+module add UHTS/Aligner/STAR/2.5.0b;
+module add UHTS/Analysis/samtools/1.2;
+module add Development/java_jdk/1.8.0_66;
+module add UHTS/Aligner/bwa/0.7.13;
+module add Utility/UCSC-utils/343;
+
+mkdir RefGen/dm3/
+cd RefGen/dm3/
+#------------------------------------------------------------------------------
+# 1) dm3 genome download:
+    wget https://hgdownload.soe.ucsc.edu/goldenPath/dm3/bigZips/dm3.fa.gz
+    gunzip dm3.fa.gz
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# 2) Gene annotation file 
+# as described in 
+# http://genomewiki.ucsc.edu/index.php/Genes_in_gtf_or_gff_format#Example_with_downloaded_refGene.txt.gz
+    wget hgdownload.soe.ucsc.edu/goldenPath/dm3/database/refGene.txt.gz
+    gzip -d refGene.txt.gz
+    # Remove the first "bin" column:
+    cut -f 2- refGene.txt > refGene.input
+    # Convert to gtf:
+    genePredToGtf file refGene.input dm3refGene.gtf
+    # Sort output by chromosome and coordinate
+    cat dm3refGene.gtf  | sort -k1,1 -k4,4 > dm3refGene.srt.gtf
+    rm refGene.txt dm3refGene.gtf
+    # VERY IMPORTANT: REMOVE PRIME SIGNS FROM GTF, OTHERWISE THE SYSTEM 
+    # WILL THINK THAT IT'S A GENE WITH A VERY LONG NAME BETWEEN PRIMES
+    sed -i "s@'@prime@g" dm3refGene.srt.gtf
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# 5) Index with STAR
+#------------------------------------------------------------------------------
+    genomeFasta="dm3.Wolb.fa"
+    inputGTF="dm3refGene.srt.gtf"
+    STAR --runMode genomeGenerate --runThreadN 12 --genomeDir . \
+         --genomeFastaFiles $genomeFasta --sjdbGTFfile $inputGTF       
+    # created files: chrLength.txt, chrStart.txt, exonGeTrInfo.tab, 
+    # freeze2.vcf.gz.tbi, genomeParameters.txt, SA, sjdbList.fromGTF.out.tab,
+    # chrNameLength.txt, exonInfo.tab, geneInfo.tab, Log.out, SAindex, 
+    # sjdbList.out.tab, chrName.txt, Genome, sjdbInfo.txt, transcriptInfo.tab
+    
+    # second pass indexing for variant calling
+    mkdir dm3_2pass/
+    STAR --runMode genomeGenerate --runThreadN 12 \
+     --genomeDir dm3_2pass/ \
+     --genomeFastaFiles dm3.Wolb.fa \
+     --sjdbFileChrStartEnd sjdbList.fromGTF.out.tab \
+     --sjdbOverhang 75
+
+
+#------------------------------------------------------------------------------
+# 6) Index with samtools
+#------------------------------------------------------------------------------
+    samtools faidx dm3.Wolb.fa 
+# created files :  dm3.Wolb.fa.fai
+
+#------------------------------------------------------------------------------
+# 7) Index with BWA
+#------------------------------------------------------------------------------
+    bwa index -a bwtsw dm3.Wolb.fa
+# created files : dm3.Wolb.fa.sa dm3.Wolb.fa.amb dm3.Wolb.fa.ann 
+# dm3.Wolb.fa.pac dm3.Wolb.fa.bwt
+
+#------------------------------------------------------------------------------
+# 8) Index with Picard
+#------------------------------------------------------------------------------
+    picardJar=/scratch/el/monthly/mlitovch/tools/picard/picard.jar
+    java -jar $picardJar CreateSequenceDictionary \
+        REFERENCE=dm3.Wolb.fa \
+        OUTPUT=dm3.Wolb.dict 
+# created files: dm3.Wolb.dict
+
+#------------------------------------------------------------------------------
+# 9) Download DGRP2 VCF
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# 10) RAL to Bloomington convertion table
+#------------------------------------------------------------------------------
+
+
+exit 0;
